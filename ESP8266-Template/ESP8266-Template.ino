@@ -11,8 +11,8 @@
  * 
  * If you use DeepSleep, make sure to connect pin 16 (D0) to RESET, or your ESP will never wake up!
  * Also keep in mind that you can DeepSleep for ~ 1 hour max (hardware limitation)!
- * ATTENTION: Keep in mind that it takes quite a while after the sketch has booted until we receive messages
- * from the subscribed topics! This is especially important if you want to modify the ESP DeepSleep time.
+ * ATTENTION: Keep in mind that it takes quite a while after the sketch has booted until we receive messages from all subscribed topics!
+ * This is especially important if you want to modify the ESP DeepSleep time. Not recommended to maximize battery lifetime, use a suitable hardcoded value instead!
  * You will have to keep things going until you've received the DeepSleepDuration Topic, or the default value will be used!
  * To get OTA update working on windows, you need to install python and python.exe needs to be in %PATH%
  * First flash needs to be wired of course. Afterwards Arduino IDE needs to be restarted if you cannot find
@@ -69,20 +69,21 @@ bool OverrideWD = false;
 // ============================
 #define WIFINAME TemplWifi
 WiFiClient WIFINAME;
-const char* ssid = "xxx";
-const char* password = "xxx";
+const char* ssid = "xxxx";
+const char* password = "xxxx";
 
 
 // OTA Update settings
 // =====================
+// OTANAME will show up as Arduino IDE "Port" Name
 #define OTANAME "ESPtemplate"
-#define OTAPASS "xxx"
+#define OTAPASS "xxxx"
 
 
 // MQTT Broker Settings
 // ==========================================
-#define mqtt_server "192.168.1.1"
-#define mqtt_Client_Name "esp-template"
+#define mqtt_server "192.168.0.1"
+#define mqtt_Client_Name "temp-esp"
 // Maximum connection attempts to MQTT broker before going to sleep
 const int MaxConnAttempts = 3;
 // Message buffer for incoming Data from MQTT subscriptions
@@ -113,7 +114,11 @@ bool SentOtaIPtrue = false;
 
 // DeepSleep Time in Minutes
 #define dsmin_topic "HB7/Test/DeepSleepMinutes"
+//  ATTENTION: it can take up to 30 seconds after boot until your ESP has received values for all topics!
+// so for a long battery lifetime, you might not want to fetch new DeepSleepDuration values by MQTT!
+// set your desired default value here instead and re-flash if required to put the ESP to sleep asap.
 int DeepSleepDuration = 2;
+
 // Topic where VCC will be published
 #define vcc_topic "HB7/Test/Vcc"
 float VCC = 3.333;
@@ -151,6 +156,7 @@ void WDTCallback(void *pArg)
   #endif
   #ifdef DEEPSLEEP
   ESP.deepSleep(DeepSleepDuration * 60000000);
+  delay(3000);
   #endif
   delay(100);
 }
@@ -474,6 +480,7 @@ void loop() {
   // Dont forget to reset WD flag regularily
   ProgramResponding = true;
 
+  delay(200);
   // Check connection to MQTT broker and update topics
   if (!mqttClt.connected()) {
     if (ConnectToBroker()) {
@@ -496,7 +503,7 @@ void loop() {
     #endif       
     if (millis() < 27000) {
       // this delay is required to make sure that we know our correct status before doing anything..
-      // shorter delay will not work reliably (connecting to WiFi can take a long time)
+      // shorter delay will not work reliably (fetching all MQTT topics takes a long time)
       #ifdef SerialEnabled
       Serial.println("Sketch just booted, delaying OTA operation until all MQTT topics arrived..");
       #endif
@@ -583,17 +590,18 @@ void loop() {
   delay(100);
 
   #ifdef DEEPSLEEP
-//  #ifdef USELED
-//  //DEBUG: One long blink
-//  ToggleLed(LED,2000,2);
-//  //DEBUG: One short blink for each minute of sleeping
-//  int blinks = DeepSleepDuration * 2;
-//  ToggleLed(LED,300,blinks);
-//  #endif
   // disconnect WiFi and go to sleep
+  #ifdef SerialEnabled
+  Serial.println("Good night for " + String(DeepSleepDuration) + " minutes.");
+  #endif
   WiFi.disconnect();
   ESP.deepSleep(DeepSleepDuration * 60000000);
   #else
-  delay(1000);
+  #ifdef SerialEnabled
+  Serial.println("Loop finished, DeepSleep disabled. Restarting in 5 seconds.");
   #endif
+  ProgramResponding = true;
+  #endif
+  //ATTN: Sketch continues to run for a short time after initiating DeepSleep, so pause here
+  delay(5000);
 }
