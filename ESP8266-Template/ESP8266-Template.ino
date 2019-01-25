@@ -34,9 +34,16 @@ ADC_MODE(ADC_VCC);
 // Corrected Divider (might need tuning for your ESP), default is 1024
 #define VCCCORRDIV 919
 
-// Enable (define) Serial Port for Debugging
-// ==========================================
-//#define SerialEnabled
+// Enable (define) debug output on serial port
+// ============================================
+#define DEBUG
+#ifdef DEBUG
+  #define DEBUG_PRINT(...) Serial.print(__VA_ARGS__)
+  #define DEBUG_PRINTLN(...) Serial.println(__VA_ARGS__)
+#else
+  #define DEBUG_PRINT(...)
+  #define DEBUG_PRINTLN(...)
+#endif
 
 // Enable Watchdog (sends ESP to DeepSleep if sketch hangs)
 // ===========================================================
@@ -63,6 +70,13 @@ bool OverrideWD = false;
 // =====================
 // Enable (define) ESP deepSleep
 #define DEEPSLEEP
+
+// Set WiFi Sleep Mode
+// ====================
+// CAUTION: Light sleep might disconnect you from broker during sketch execution!
+// Handle with care!
+#define WIFISLEEP WIFI_NONE_SLEEP
+//#define WIFISLEEP WIFI_LIGHT_SLEEP
 
 
 // WLAN Network SSID and PSK
@@ -151,9 +165,7 @@ void WDTCallback(void *pArg)
   ToggleLed(LED,600,6);
   ToggleLed(LED,200,6);
   #endif
-  #ifdef SerialEnabled
-  Serial.println("Watchdog Timer detected program not responding, going to sleep!");
-  #endif
+  DEBUG_PRINTLN("Watchdog Timer detected program not responding, going to sleep!");
   #ifdef DEEPSLEEP
   ESP.deepSleep(DeepSleepDuration * 60000000);
   delay(3000);
@@ -173,12 +185,7 @@ void MqttCallback(char* topic, byte* payload, unsigned int length)
   message_buff[i] = '\0';
   String msgString = String(message_buff);
 
-  #ifdef SerialEnabled
-  Serial.print("MQTT: Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  Serial.println(msgString);
-  #endif
+  DEBUG_PRINTLN("MQTT: Message arrived [" + String(topic) + "]: " + String(msgString));
 
   // run through topics
   if ( String(topic) == ota_topic ) {
@@ -186,9 +193,7 @@ void MqttCallback(char* topic, byte* payload, unsigned int length)
     else if (msgString == "off") { OTAupdate = false; }
     else
     {
-      #ifdef SerialEnabled
-      Serial.println("MQTT: ERROR: Fetched invalid OTA-Update: " + String(msgString));
-      #endif
+      DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid OTA-Update: " + String(msgString));
       delay(200);
     }
   }
@@ -198,15 +203,11 @@ void MqttCallback(char* topic, byte* payload, unsigned int length)
     {
       // Valid value, do something
       DeepSleepDuration = IntPayLd;
-      #ifdef SerialEnabled
-      Serial.println("MQTT: Fetched new DeepSleep duration: " + String(DeepSleepDuration));
-      #endif
+      DEBUG_PRINTLN("MQTT: Fetched new DeepSleep duration: " + String(DeepSleepDuration));
     }
     else
     {
-      #ifdef SerialEnabled
-      Serial.println("MQTT: ERROR: Fetched invalid DeepSleep duration: " + String(msgString));
-      #endif
+      DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid DeepSleep duration: " + String(msgString));
       delay(200);
     }
   }
@@ -215,17 +216,13 @@ void MqttCallback(char* topic, byte* payload, unsigned int length)
     else if (msgString == "off") { OtaInProgress = false; }
     else
     {
-      #ifdef SerialEnabled
-      Serial.println("MQTT: ERROR: Fetched invalid OtaInProgress: " + String(msgString));
-      #endif
+      DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid OtaInProgress: " + String(msgString));
       delay(200);
     }
   }
   else {
-    #ifdef SerialEnabled
-    Serial.println("ERROR: Unknown topic: " + String(topic));
-    Serial.println("ERROR: Unknown topic value: " + String(msgString));
-    #endif
+    DEBUG_PRINTLN("ERROR: Unknown topic: " + String(topic));
+    DEBUG_PRINTLN("ERROR: Unknown topic value: " + String(msgString));
     delay(200);
   }     
 }
@@ -252,73 +249,50 @@ bool ConnectToBroker()
   // Try to connect x times, then return error
   while (ConnAttempt < MaxConnAttempts)
   {
-    #ifdef SerialEnabled
-    Serial.print("Connecting to MQTT broker..");
-    #endif
+    DEBUG_PRINT("Connecting to MQTT broker..");
     // Attempt to connect
     if (mqttClt.connect(mqtt_Client_Name))
     {
-      #ifdef SerialEnabled
-      Serial.println("connected");
-      #endif
+      DEBUG_PRINTLN("connected");
       RetVal = true;
       
       // Subscribe to Topics
       if (mqttClt.subscribe(ota_topic))
       {
-        #ifdef SerialEnabled
-        Serial.print("Subscribed to ");
-        Serial.println(ota_topic);
-        #endif
+        DEBUG_PRINTLN("Subscribed to " + String(ota_topic));
+        delay(1);
       }
       else
       {
-        #ifdef SerialEnabled
-        Serial.print("Failed to subscribe to ");
-        Serial.println(ota_topic);
-        #endif
+        DEBUG_PRINTLN("Failed to subscribe to " + String(ota_topic));
         delay(100);
       }
       if (mqttClt.subscribe(otaInProgress_topic))
       {
-        #ifdef SerialEnabled
-        Serial.print("Subscribed to ");
-        Serial.println(otaInProgress_topic);
-        #endif
+        DEBUG_PRINTLN("Subscribed to " + String(otaInProgress_topic));
+        delay(1);
       }
       else
       {
-        #ifdef SerialEnabled
-        Serial.print("Failed to subscribe to ");
-        Serial.println(otaInProgress_topic);
-        #endif
+        DEBUG_PRINTLN("Failed to subscribe to " + String(otaInProgress_topic));
         delay(100);
       }
       if (mqttClt.subscribe(dsmin_topic))
       {
-        #ifdef SerialEnabled
-        Serial.print("Subscribed to ");
-        Serial.println(dsmin_topic);
-        #endif
+        DEBUG_PRINTLN("Subscribed to " + String(dsmin_topic));
+        delay(1);
       }
       else
       {
-        #ifdef SerialEnabled
-        Serial.print("Failed to subscribe to ");
-        Serial.println(dsmin_topic);
-        #endif
+        DEBUG_PRINTLN("Failed to subscribe to " + String(dsmin_topic));
         delay(100);
       }
       delay(200);
       break;
     } else {
-      #ifdef SerialEnabled
-      Serial.print("failed, rc=");
-      Serial.println(mqttClt.state());
-      Serial.println("Sleeping 5 seconds..");
-      #endif
-      // Wait 1 seconds before retrying
-      delay(1000);
+      DEBUG_PRINTLN("failed, rc=" + String(mqttClt.state()));
+      DEBUG_PRINTLN("Sleeping 2 seconds..");
+      delay(2000);
       ConnAttempt++;
     }
   }
@@ -346,14 +320,13 @@ void ToggleLed (int PIN,int WaitTime,int Count)
  * ========================================================================
  */
 void setup() {
-  //delay(300);          //Startup delay
   // start serial port and digital Outputs
-  #ifdef SerialEnabled
+  #ifdef DEBUG
   Serial.begin(115200);
-  Serial.println();
-  Serial.println();
-  Serial.println("ESP8266 Template");
   #endif
+  DEBUG_PRINTLN();
+  DEBUG_PRINTLN();
+  DEBUG_PRINTLN("ESP8266 Template");
   #ifdef USELED
   pinMode(LED, OUTPUT);
   digitalWrite(LED, LEDOFF);
@@ -361,30 +334,22 @@ void setup() {
   #endif
 
   // Set WiFi Sleep Mode
-  WiFi.setSleepMode(WIFI_NONE_SLEEP);
-  //WiFi.setSleepMode(WIFI_LIGHT_SLEEP);
+  WiFi.setSleepMode(WIFISLEEP);
   
-  // Connect to WiFi network
-  #ifdef SerialEnabled
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  #endif   
+  // Connect to WiFi network  
+  DEBUG_PRINTLN();
+  DEBUG_PRINTLN("Connecting to " + String(ssid));
   WiFi.begin(ssid, password);
+  // Next command avoids ESP broadcasting an unwanted ESSID..
   WiFi.mode(WIFI_STA);
    
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    #ifdef SerialEnabled
-    Serial.print(".");
-    #endif
+    DEBUG_PRINT(".");
   }
-  #ifdef SerialEnabled
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.print("Device IP Address: ");
-  Serial.println(WiFi.localIP());
-  #endif
+  DEBUG_PRINTLN("");
+  DEBUG_PRINTLN("WiFi connected");
+  DEBUG_PRINTLN("Device IP Address: " + String(WiFi.localIP()));
   #ifdef USELED
   // WiFi connected - blink once
   ToggleLed(LED,200,2);
@@ -392,10 +357,8 @@ void setup() {
   
   // Setup MQTT Connection to broker and subscribe to topic
   if (ConnectToBroker())
-  {
-    #ifdef SerialEnabled
-    Serial.println("Connected to MQTT broker, fetching topics..");
-    #endif
+  {    
+    DEBUG_PRINTLN("Connected to MQTT broker, fetching topics..");
     mqttClt.loop();
     #ifdef USELED
     // broker connected - blink twice
@@ -406,9 +369,8 @@ void setup() {
   }
   else
   {
-    #ifdef SerialEnabled
-    Serial.println("3 connection attempts to broker failed, using default values..");
-    #endif
+    DEBUG_PRINTLN("3 connection attempts to broker failed, using default values..");
+    delay(100);
   }
 
   // Setup OTA Updates
@@ -479,16 +441,13 @@ void setup() {
 void loop() {
   // Dont forget to reset WD flag regularily
   ProgramResponding = true;
-
   delay(200);
   // Check connection to MQTT broker and update topics
   if (!mqttClt.connected()) {
     if (ConnectToBroker()) {
       mqttClt.loop();
     } else {
-      #ifdef SerialEnabled
-      Serial.println("Unable to connect to MQTT broker.");
-      #endif   
+      DEBUG_PRINTLN("Unable to connect to MQTT broker.");
       delay(100);
     }
   } else {
@@ -498,15 +457,11 @@ void loop() {
   // If OTA Firmware Update is requested,
   // only loop through OTA function until finished (or reset by MQTT)
   if (OTAupdate) {
-    #ifdef SerialEnabled
-    Serial.println("Millis: " + String(millis()));
-    #endif       
+    DEBUG_PRINTLN("Millis: " + String(millis()));
     if (millis() < 27000) {
       // this delay is required to make sure that we know our correct status before doing anything..
       // shorter delay will not work reliably (fetching all MQTT topics takes a long time)
-      #ifdef SerialEnabled
-      Serial.println("Sketch just booted, delaying OTA operation until all MQTT topics arrived..");
-      #endif
+      DEBUG_PRINTLN("Sketch just booted, delaying OTA operation until all MQTT topics arrived..");
       #ifdef USELED
       ToggleLed(LED,1000,2);
       #else
@@ -515,9 +470,7 @@ void loop() {
       return;
     }
     if (OtaInProgress && !OtaIPsetBySketch) {
-      #ifdef SerialEnabled
-      Serial.println("OTA firmware update successful, resuming normal operation..");
-      #endif
+      DEBUG_PRINTLN("OTA firmware update successful, resuming normal operation..");
       mqttClt.publish(otaStatus_topic, String(UPDATEOK).c_str(), true);
       mqttClt.publish(ota_topic, String("off").c_str(), true);
       mqttClt.publish(otaInProgress_topic, String("off").c_str(), true);
@@ -536,18 +489,14 @@ void loop() {
     }
     // Override watchdog during OTA update
     OverrideWD = true;
-    #ifdef SerialEnabled
-    Serial.println("OTA firmware update requested, waiting for upload..");
-    #endif
+    DEBUG_PRINTLN("OTA firmware update requested, waiting for upload..");
     #ifdef USELED
     // Signal OTA update requested
     ToggleLed(LED,100,10);
     #endif
     //set MQTT reminder that OTA update was executed
     if (!SentOtaIPtrue) {
-      #ifdef SerialEnabled
-      Serial.println("Setting MQTT OTA-update reminder flag on broker..");
-      #endif
+      DEBUG_PRINTLN("Setting MQTT OTA-update reminder flag on broker..");
       mqttClt.publish(otaInProgress_topic, String("on").c_str(), true);
       OtaInProgress = true;      
       SentOtaIPtrue = true;
@@ -559,9 +508,7 @@ void loop() {
     return;
   } else {
     if (SentUpdateRequested) {
-      #ifdef SerialEnabled
-      Serial.println("OTA firmware update cancelled by MQTT, resuming normal operation..");
-      #endif
+      DEBUG_PRINTLN("OTA firmware update cancelled by MQTT, resuming normal operation..");
       mqttClt.publish(otaStatus_topic, String(UPDATECANC).c_str(), true);
       mqttClt.publish(otaInProgress_topic, String("off").c_str(), true);
       OtaInProgress = false;
@@ -591,15 +538,11 @@ void loop() {
 
   #ifdef DEEPSLEEP
   // disconnect WiFi and go to sleep
-  #ifdef SerialEnabled
-  Serial.println("Good night for " + String(DeepSleepDuration) + " minutes.");
-  #endif
+  DEBUG_PRINTLN("Good night for " + String(DeepSleepDuration) + " minutes.");
   WiFi.disconnect();
   ESP.deepSleep(DeepSleepDuration * 60000000);
   #else
-  #ifdef SerialEnabled
-  Serial.println("Loop finished, DeepSleep disabled. Restarting in 5 seconds.");
-  #endif
+  DEBUG_PRINTLN("Loop finished, DeepSleep disabled. Restarting in 5 seconds.");
   ProgramResponding = true;
   #endif
   //ATTN: Sketch continues to run for a short time after initiating DeepSleep, so pause here
