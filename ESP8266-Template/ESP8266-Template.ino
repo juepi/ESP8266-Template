@@ -349,7 +349,8 @@ void setup() {
   }
   DEBUG_PRINTLN("");
   DEBUG_PRINTLN("WiFi connected");
-  DEBUG_PRINTLN("Device IP Address: " + String(WiFi.localIP()));
+  DEBUG_PRINT("Device IP Address: ");
+  DEBUG_PRINTLN(WiFi.localIP());
   #ifdef USELED
   // WiFi connected - blink once
   ToggleLed(LED,200,2);
