@@ -11,9 +11,8 @@
  * 
  * If you use DeepSleep, make sure to connect pin 16 (D0) to RESET, or your ESP will never wake up!
  * Also keep in mind that you can DeepSleep for ~ 1 hour max (hardware limitation)!
- * ATTENTION: Keep in mind that it takes quite a while after the sketch has booted until we receive messages from all subscribed topics!
- * This is especially important if you want to modify the ESP DeepSleep time. Not recommended to maximize battery lifetime, use a suitable hardcoded value instead!
- * You will have to keep things going until you've received the DeepSleepDuration Topic, or the default value will be used!
+ * ATTENTION: Keep in mind that it takes quite a while (up to 20 seconds in my tests) after the sketch has booted
+ * until we receive messages from all subscribed topics!
  * To get OTA update working on windows, you need to install python and python.exe needs to be in %PATH%
  * First flash needs to be wired of course. Afterwards Arduino IDE needs to be restarted if you cannot find
  * the ESP OTA-port in the IDE (also MQTT ota_topic needs to be set to "on" to be able to flash OTA).
@@ -38,6 +37,7 @@ ADC_MODE(ADC_VCC);
 // ============================================
 #define DEBUG
 #ifdef DEBUG
+  // you can always use these macros for serial debug output
   #define DEBUG_PRINT(...) Serial.print(__VA_ARGS__)
   #define DEBUG_PRINTLN(...) Serial.println(__VA_ARGS__)
 #else
@@ -48,16 +48,18 @@ ADC_MODE(ADC_VCC);
 // Enable Watchdog (sends ESP to DeepSleep if sketch hangs)
 // ===========================================================
 #define ENABLEWATCHDOG
-// OS Timer for Software Watchdog
-os_timer_t WDTimer;
 // This flag will be set FALSE at every WD timer trigger
 // so be sure to regularily set in TRUE in your sketch
 // if it's still FALSE at the next WD timer run, WD will trigger
 bool ProgramResponding = true;
 // WD may be overriden (i.e. OTA Update)
 bool OverrideWD = false;
+#ifdef ENABLEWATCHDOG
+// OS Timer for Software Watchdog
+os_timer_t WDTimer;
 // WDT will trigger every 10 seconds
 #define WDTIMEOUT 10000
+#endif
 
 // Status LED on D4 (LED inverted!)
 // =================================
@@ -69,7 +71,9 @@ bool OverrideWD = false;
 // Enable ESP DeepSleep
 // =====================
 // Enable (define) ESP deepSleep
-#define DEEPSLEEP
+//#define DEEPSLEEP
+// DeepSleep duration in Minutes (max. 60)
+int DeepSleepDuration = 2;
 
 // Set WiFi Sleep Mode
 // ====================
@@ -81,23 +85,24 @@ bool OverrideWD = false;
 
 // WLAN Network SSID and PSK
 // ============================
-#define WIFINAME TemplWifi
+#define WIFINAME WemosMini1
 WiFiClient WIFINAME;
-const char* ssid = "xxxx";
-const char* password = "xxxx";
+const char* ssid = "xxx";
+const char* password = "xxx";
 
 
 // OTA Update settings
 // =====================
 // OTANAME will show up as Arduino IDE "Port" Name
-#define OTANAME "ESPtemplate"
-#define OTAPASS "xxxx"
+#define OTANAME "WemosMini1"
+// Password for OTA update authentication
+#define OTAPASS "xxx"
 
 
 // MQTT Broker Settings
 // ==========================================
-#define mqtt_server "192.168.0.1"
-#define mqtt_Client_Name "temp-esp"
+#define mqtt_server "192.168.1.1"
+#define mqtt_Client_Name "WemosMini1"
 // Maximum connection attempts to MQTT broker before going to sleep
 const int MaxConnAttempts = 3;
 // Message buffer for incoming Data from MQTT subscriptions
@@ -116,6 +121,7 @@ bool OTAupdate = false;
 #define UPDATEREQ "update_requested"
 #define UPDATECANC "update_cancelled"
 #define UPDATEOK "update_success"
+#define UPLOADOK "upload_complete"
 bool SentUpdateRequested = false;
 //An additional "external flag" is required to "remind" a freshly running sketch that it was just OTA-flashed..
 //during an OTA update, PubSubClient functions do not ru (or cannot access the network)
@@ -125,13 +131,6 @@ bool SentUpdateRequested = false;
 bool OtaInProgress = false;
 bool OtaIPsetBySketch = false;
 bool SentOtaIPtrue = false;
-
-// DeepSleep Time in Minutes
-#define dsmin_topic "HB7/Test/DeepSleepMinutes"
-//  ATTENTION: it can take up to 30 seconds after boot until your ESP has received values for all topics!
-// so for a long battery lifetime, you might not want to fetch new DeepSleepDuration values by MQTT!
-// set your desired default value here instead and re-flash if required to put the ESP to sleep asap.
-int DeepSleepDuration = 2;
 
 // Topic where VCC will be published
 #define vcc_topic "HB7/Test/Vcc"
@@ -197,20 +196,6 @@ void MqttCallback(char* topic, byte* payload, unsigned int length)
       delay(200);
     }
   }
-  else if ( String(topic) == dsmin_topic ) {
-    int IntPayLd = msgString.toInt();
-    if ((IntPayLd > 0) && (IntPayLd <= 60))
-    {
-      // Valid value, do something
-      DeepSleepDuration = IntPayLd;
-      DEBUG_PRINTLN("MQTT: Fetched new DeepSleep duration: " + String(DeepSleepDuration));
-    }
-    else
-    {
-      DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid DeepSleep duration: " + String(msgString));
-      delay(200);
-    }
-  }
   else if ( String(topic) == otaInProgress_topic ) {
     if (msgString == "on") { OtaInProgress = true; }
     else if (msgString == "off") { OtaInProgress = false; }
@@ -255,6 +240,7 @@ bool ConnectToBroker()
     {
       DEBUG_PRINTLN("connected");
       RetVal = true;
+      ProgramResponding = true;
       
       // Subscribe to Topics
       if (mqttClt.subscribe(ota_topic))
@@ -277,21 +263,12 @@ bool ConnectToBroker()
         DEBUG_PRINTLN("Failed to subscribe to " + String(otaInProgress_topic));
         delay(100);
       }
-      if (mqttClt.subscribe(dsmin_topic))
-      {
-        DEBUG_PRINTLN("Subscribed to " + String(dsmin_topic));
-        delay(1);
-      }
-      else
-      {
-        DEBUG_PRINTLN("Failed to subscribe to " + String(dsmin_topic));
-        delay(100);
-      }
       delay(200);
       break;
     } else {
       DEBUG_PRINTLN("failed, rc=" + String(mqttClt.state()));
       DEBUG_PRINTLN("Sleeping 2 seconds..");
+      ProgramResponding = true;
       delay(2000);
       ConnAttempt++;
     }
@@ -310,6 +287,7 @@ void ToggleLed (int PIN,int WaitTime,int Count)
   for (int i=0; i < Count; i++)
   {
    digitalWrite(PIN, !digitalRead(PIN));
+   ProgramResponding = true;
    delay(WaitTime); 
   }
 }
@@ -396,8 +374,8 @@ void setup() {
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     int percentComplete = (progress / (total / 100));
-    if (percentComplete = 100) {
-      mqttClt.publish(otaStatus_topic, String("upload_complete").c_str(), true);
+    if (percentComplete == 100) {
+      mqttClt.publish(otaStatus_topic, String(UPLOADOK).c_str(), true); delay(500);
     }
   });
   ArduinoOTA.onError([](ota_error_t error) {
@@ -414,7 +392,7 @@ void setup() {
     } else if (error == OTA_END_ERROR) {
       mqttClt.publish(otaStatus_topic, String("End_Error").c_str(), true);
     }
-    delay(300);
+    delay(500);
   });
   ArduinoOTA.begin();
 
